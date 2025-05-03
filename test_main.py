@@ -7,6 +7,8 @@ import pdfplumber
 import warnings
 import logging
 
+import extract_text_from_pdf from ocr_utils
+
 # Настройка логгеров для подавления предупреждений
 pdfplumber_logger = logging.getLogger("pdfplumber")
 pdfplumber_logger.setLevel(logging.ERROR)
