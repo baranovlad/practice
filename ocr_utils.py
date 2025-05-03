@@ -49,7 +49,7 @@ def is_pdf_textual(pdf_path):
 def convert_pdf_to_images(pdf_path, dpi=300):
     """Извлекает изображения из PDF."""
     try:
-        images = convert_from_path(pdf_path, dpi=dpi, poppler_path=r"C:\Users\dimaw_1l7qj73\OneDrive\Рабочий стол\политех\practice\poppler-24.08.0\Library\bin")
+        images = convert_from_path(pdf_path, dpi=dpi, poppler_path=os.path.join(os.getcwd(), r"poppler-24.08.0\Library\bin"))
         return images
 
     except Exception as e:
@@ -81,44 +81,44 @@ def collect_results(pages, out_dir):
         print(f"Ошибка при сохранении файла: {e}")
 
 
-def main():
-    pdf_path = input("Введите путь к PDF: ").strip()
-    if not os.path.exists(pdf_path):
-        print("Указанный файл PDF не существует!")
-        return
-
-    output_path = input("Куда сохранить текст (например, output.txt): ").strip()
-
-    with tempfile.TemporaryDirectory() as temp_dir:
-        print("Извлекаем изображения из PDF...")
-        images = convert_pdf_to_images(pdf_path, dpi=300)
-
-        if not images:
-            print("Не удалось извлечь изображения из PDF.")
-            return
-
-        print("Распознаём текст с помощью EasyOCR...")
-        page_text = ""
-
-        result = {
-            "source_pdf": pdf_path,
-            "pages": []
-        }
-
-        for page_num, img in enumerate(images, start=1):
-            page_text = ""
-            text = run_ocr_on_image(img, reader)
-            page_text += text + "\n\n"
-
-            result["pages"].append({
-                "page_number": page_num,
-                "text": page_text.strip()
-            })
-
-        print("Сохраняем результат...")
-        collect_results(result, output_path)
-
-    print(f"Готово! Текст сохранён в {output_path}")
-
-if __name__ == "__main__":
-    main()
+# def main():
+#     pdf_path = input("Введите путь к PDF: ").strip()
+#     if not os.path.exists(pdf_path):
+#         print("Указанный файл PDF не существует!")
+#         return
+#
+#     output_path = input("Куда сохранить текст (например, output.txt): ").strip()
+#
+#     with tempfile.TemporaryDirectory() as temp_dir:
+#         print("Извлекаем изображения из PDF...")
+#         images = convert_pdf_to_images(pdf_path, dpi=300)
+#
+#         if not images:
+#             print("Не удалось извлечь изображения из PDF.")
+#             return
+#
+#         print("Распознаём текст с помощью EasyOCR...")
+#         page_text = ""
+#
+#         result = {
+#             "source_pdf": pdf_path,
+#             "pages": []
+#         }
+#
+#         for page_num, img in enumerate(images, start=1):
+#             page_text = ""
+#             text = run_ocr_on_image(img, reader)
+#             page_text += text + "\n\n"
+#
+#             result["pages"].append({
+#                 "page_number": page_num,
+#                 "text": page_text.strip()
+#             })
+#
+#         print("Сохраняем результат...")
+#         collect_results(result, output_path)
+#
+#     print(f"Готово! Текст сохранён в {output_path}")
+#
+# if __name__ == "__main__":
+#     main()
