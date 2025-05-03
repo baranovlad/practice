@@ -8,6 +8,7 @@ import asyncio
 import urllib3
 import requests
 import tempfile
+import logging
 
 
 class ChangeDir:
@@ -34,7 +35,7 @@ async def upload_file(url, out_dir):
             try:
                 f.write(requests.get(str(url), verify=False).content)
             except Exception as e:
-                print(f"Error downloading PDF: {e}")
+                logging.info(f"Error downloading PDF: {e}")
 
 
 def is_pdf_textual(pdf_path):
@@ -53,7 +54,7 @@ def convert_pdf_to_images(pdf_path, dpi=300):
         return images
 
     except Exception as e:
-        print(f"Ошибка при конвертации PDF: {e}")
+        logging.info(f"Ошибка при конвертации PDF: {e}")
 
 
 def run_ocr_on_image(img, reader):
@@ -65,7 +66,7 @@ def run_ocr_on_image(img, reader):
         return page_text
 
     except Exception as e:
-        print(f"Ошибка при распознавании текста: {e}")
+        logging.info(f"Ошибка при распознавании текста: {e}")
         return ""
 
 
@@ -78,7 +79,7 @@ def collect_results(pages, out_dir):
             file.write(formatted_json)
             return out_dir
     except Exception as e:
-        print(f"Ошибка при сохранении файла: {e}")
+        logging.info(f"Ошибка при сохранении файла: {e}")
 
 
 # def main():
