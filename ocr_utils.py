@@ -41,7 +41,7 @@ async def upload_file(url, out_dir):
 def is_pdf_textual(pdf_path):
     with open(pdf_path, 'rb') as file:
         reader = PyPDF2.PdfReader(file)
-        if reader.pages[1].extract_text() is not None:
+        if reader.pages[0].extract_text() is not None:
             return True
         else:
             return False
