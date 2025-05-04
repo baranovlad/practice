@@ -1,3 +1,7 @@
+paths = _result_paths(task_id)
+paths["folder"].mkdir(parents=True, exist_ok=True)   # маркируем «есть такая задача»
+bg.add_task(process_pdf, temp_pdf, task_id)
+RedirectResponse
 """FastAPI entry‑point for the OCR‑PDF demo.
 
 Highlights
@@ -104,6 +108,7 @@ async def upload_pdf(
 
     task_id = uuid.uuid4().hex
     temp_pdf = _save_upload_temp(file)
+    _result_paths(task_id)["folder"].mkdir(parents=True, exist_ok=True)
     bg.add_task(process_pdf, temp_pdf, task_id)
     # браузер сам перейдёт на страницу результата
     return RedirectResponse(
@@ -126,7 +131,7 @@ async def result_page(request: Request, task_id: str):
             "error": None,
             "txt_url": txt_url,
             "json_url": json_url,
-            "task_id": task_id,       # пригодится в шаблоне
+            "task_id": task_id,
         }
         return templates.TemplateResponse("result.html", context)
 
