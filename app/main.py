@@ -28,7 +28,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -105,9 +105,11 @@ async def upload_pdf(
     task_id = uuid.uuid4().hex
     temp_pdf = _save_upload_temp(file)
     bg.add_task(process_pdf, temp_pdf, task_id)
-
-    # Front‑end будет опрашивать /result/{task_id}
-    return JSONResponse({"task_id": task_id})
+    # браузер сам перейдёт на страницу результата
+    return RedirectResponse(
+        url=f"/result/{task_id}",
+        status_code=303,           # 303 — «перенаправь POST на GET»
+    )
 
 
 @app.get("/result/{task_id}", response_class=HTMLResponse)
