@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Загрузка PDF{% endblock %}
+
+{% block content %}
+  <div class="container">
+    <h1>Загрузить PDF для OCR</h1>
+
+    <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data" class="upload-form">
+      <label class="file-input">
+        <input type="file" name="file" accept="application/pdf" required>
+        <span>Выберите PDF‑файл…</span>
+      </label>
+
+      <button type="submit" class="btn">Отправить</button>
+    </form>
+
+    <div id="status" class="status" style="display:none;"></div>
+  </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="{{ url_for('static', path='main.js') }}"></script>
+{% endblock %}
