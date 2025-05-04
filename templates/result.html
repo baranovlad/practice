@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Результат{% endblock %}
+
+{% block content %}
+  <div class="container">
+    <h1>Результат OCR</h1>
+
+    {% if error %}
+      <div class="alert alert-error">
+        {{ error }}
+      </div>
+    {% elif processing %}
+      <div class="alert alert-wait">
+        Файл ещё обрабатывается. Обновите страницу через несколько секунд…
+        <form method="get" style="margin-top:1rem;">
+          <button type="submit">Обновить</button>
+        </form>
+      </div>
+    {% else %}
+      <div class="download-links">
+        <a href="{{ url_for('download_file', path=txt_filename) }}" class="btn">Скачать TXT</a>
+        <a href="{{ url_for('download_file', path=json_filename) }}" class="btn btn-secondary">Скачать JSON</a>
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}
