@@ -117,12 +117,16 @@ async def result_page(request: Request, task_id: str):
     paths = _result_paths(task_id)
 
     if paths["txt"].exists() and paths["json"].exists():
+        txt_url = app.url_path_for("download_file", task_id=task_id, filename="result.txt")
+        json_url = app.url_path_for("download_file", task_id=task_id, filename="result.json")
+
         context = {
             "request": request,
             "processing": False,
             "error": None,
-            "txt_filename": f"download/{task_id}/result.txt",
-            "json_filename": f"download/{task_id}/result.json",
+            "txt_url": txt_url,
+            "json_url": json_url,
+            "task_id": task_id,       # пригодится в шаблоне
         }
         return templates.TemplateResponse("result.html", context)
 
