@@ -7,6 +7,11 @@
 
 from pathlib import Path
 import logging
+import shutil, sys
+
+_poppler = Path(os.getenv("POPPLER_PATH", ""))
+if not (_poppler / "pdftoppm.exe").exists():
+    sys.exit("Poppler not found: проверьте POPPLER_PATH")
 
 try:
     from dotenv import load_dotenv
