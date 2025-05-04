@@ -1,93 +1,166 @@
-/* ===== Base reset ===== */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+/* styles.css */
+
+/* Подключаем шрифт на всякий случай */
+@import url('https://fonts.googleapis.com/css2?family=Raleway:wght@400;700&display=swap');
 
 body {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  background: #f7f7f7;
-  color: #222;
+  margin: 0;
+  padding: 0;
+  background: #f5f5f5;
+  font-family: 'Raleway', sans-serif;
 }
 
-/* ===== Layout helpers ===== */
-.container {
-  max-width: 720px;
-  padding: 2rem 1.25rem;
-  margin: 0 auto;
+.upload-container {
+  max-width: 600px;
+  margin: 80px auto;
+  padding: 24px;
   background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
-}
-
-h1 {
-  font-size: 1.75rem;
-  margin-bottom: 1.5rem;
-}
-
-/* ===== Alerts ===== */
-.alert {
-  padding: 1rem 1.25rem;
   border-radius: 8px;
-  margin-bottom: 1.5rem;
-  font-size: 0.95rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  text-align: center;
 }
 
-.alert-error {
-  background: #ffe5e5;
-  color: #c62828;
-  border: 1px solid #f5b7b7;
+.upload-container h1 {
+  margin-bottom: 24px;
+  font-size: 1.8em;
+  font-weight: 700;
 }
 
-.alert-wait {
-  background: #fff9e6;
-  color: #b36b00;
-  border: 1px solid #f7e2a9;
-}
-
-/* ===== Buttons & links ===== */
-.btn {
-  display: inline-block;
-  background: #0069d9;
-  color: #fff;
-  text-decoration: none;
-  padding: 0.55rem 1.1rem;
-  border-radius: 8px;
-  font-size: 0.95rem;
-  transition: background 0.18s ease;
-}
-
-.btn:hover {
-  background: #0051ad;
-}
-
-.btn-secondary {
-  background: #6c757d;
-}
-
-.btn-secondary:hover {
-  background: #545b62;
-}
-
-.download-links {
+.upload-container form {
   display: flex;
-  gap: 1rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
 }
 
-/* ===== Form styling (optional) ===== */
-button {
-  background: #0069d9;
+.upload-container input[type="file"],
+.upload-container select,
+.upload-container button {
+  font-family: 'Raleway', sans-serif;
+  font-size: 1em;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  color: #333;
+}
+
+/* Стилизация кнопки внутри input file */
+.upload-container input[type="file"]::-webkit-file-upload-button {
+  background: #007bff;
   color: #fff;
   border: none;
-  padding: 0.55rem 1.1rem;
-  border-radius: 8px;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font: inherit;
   cursor: pointer;
-  font-size: 0.95rem;
-  transition: background 0.18s ease;
 }
 
-button:hover {
-  background: #0051ad;
+.upload-container input[type="file"]::-moz-file-upload-button {
+  background: #007bff;
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.upload-container select {
+  appearance: none;
+  background: #fff;
+  cursor: pointer;
+}
+
+.upload-container button {
+  background: #007bff;
+  color: #fff;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: background .2s;
+}
+
+.upload-container button:hover {
+  background: #0056b3;
+}
+
+/* Убираем нижние подписи */
+footer {
+  display: none;
+}
+
+/* Подключаем шрифт на всякий случай */
+@import url('https://fonts.googleapis.com/css2?family=Raleway:wght@400;700&display=swap');
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #f5f5f5;
+  font-family: 'Raleway', sans-serif;
+}
+
+.upload-container {
+  max-width: 600px;
+  margin: 80px auto;
+  padding: 24px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  text-align: center;
+}
+
+.upload-container h1 {
+  margin-bottom: 24px;
+  font-size: 1.8em;
+  font-weight: 700;
+}
+
+.upload-container form {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+}
+
+.upload-container input[type="file"],
+.upload-container select,
+.upload-container button {
+  font-family: 'Raleway', sans-serif;
+  font-size: 1em;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.upload-container input[type="file"] {
+  padding: 8px;
+}
+
+.upload-container select {
+  appearance: none;
+  background: #fff;
+  cursor: pointer;
+}
+
+.upload-container button {
+  background: #007bff;
+  color: #fff;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: background .2s;
+}
+
+.upload-container button:hover {
+  background: #0056b3;
+}
+
+/* Убираем нижние подписи */
+footer {
+  display: none;
 }

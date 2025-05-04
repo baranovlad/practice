@@ -1,20 +1,24 @@
-{% extends "base.html" %}
-
-{% block title %}Загрузка PDF{% endblock %}
-
-{% block content %}
-  <div class="container">
-    <h1>Загрузить PDF для OCR</h1>
-
-    <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data" class="upload-form">
-      <label class="file-input">
-        <input type="file" name="file" accept="application/pdf" required>
-        <span>Выберите PDF‑файл…</span>
-      </label>
-
-      <button type="submit" class="btn">Отправить</button>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>OCR-PDF Demo</title>
+  <!-- стили -->
+  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
+  <!-- Raleway -->
+  <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="upload-container">
+    <h1>Загрузить PDF для OCR</h1>
+    <form action="/upload" method="post" enctype="multipart/form-data">
+      <input type="file" name="file" required>
+      <select name="model">
+        <option value="local">Локальная модель</option>
+        <option value="server">Серверная модель</option>
+      </select>
+      <button type="submit">Отправить</button>
     </form>
-
-    <div id="status" class="status" style="display:none;"></div>
   </div>
-{% endblock %}
+</body>
+</html>

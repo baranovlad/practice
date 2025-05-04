@@ -1,22 +1,3 @@
-"""Utility helpers for OCR‑processing PDF files.
-
-Designed for a tiny CPU‑only server; keeps dependencies minimal:
-* **EasyOCR** — text detection/recognition on raster pages.
-* **PyPDF2**  — cheap check whether a PDF already contains selectable text.
-* **pdf2image** — Poppler‑based rasterisation (needs `poppler-utils` on host).
-
-The public interface is just two functions:
-
-```
->>> from app import ocr_utils as ocr
->>> txt_path, json_path = ocr.run_ocr(Path("/path/to/file.pdf"), Path("results/123"))
-```
-
-— If the PDF is *textual* (copy‑paste works), we skip OCR and extract text via
-  PyPDF2.
-— Otherwise the file is rasterised page‑by‑page and passed to EasyOCR.
-"""
-
 from __future__ import annotations
 
 import json
@@ -25,9 +6,10 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Tuple
-
+import numpy as np
 import easyocr
-from pdf2image import convert_from_path
+import fitz
+from PIL import Image
 from PyPDF2 import PdfReader
 from PyPDF2.errors import PdfReadError
 
@@ -87,16 +69,22 @@ def extract_text_pdf(pdf_path: Path) -> str:
 # Step 2: rasterise pages → images
 # ──────────────────────────────────────────────────────────────
 
-def convert_pdf_to_images(pdf_path: Path, *, dpi: int = 300) -> List[Any]:  # Any = PIL.Image
-    """Rasterise each PDF page to a PIL Image (RGB).
-
-    The Poppler binary location can be overridden via `POPPLER_PATH` env var.
+def convert_pdf_to_images(pdf_path: Path, *, dpi: int = 300) -> list[Image.Image]:
     """
-    poppler_path = os.getenv("POPPLER_PATH")
-    logger.debug("Rasterising %s (dpi=%s, poppler=%s)", pdf_path.name, dpi, poppler_path)
-    images = convert_from_path(
-        str(pdf_path), dpi=dpi, fmt="jpeg", poppler_path=poppler_path, thread_count=2
-    )
+    Рендерит каждую страницу PDF в PIL.Image через MuPDF с нужным DPI.
+    DPI ≈ 72 * zoom, следовательно zoom = dpi / 72.
+    """
+    zoom = dpi / 72  # e.g. для 300 DPI — ≈4.17
+    mat = fitz.Matrix(zoom, zoom)
+
+    doc = fitz.open(str(pdf_path))
+    images: list[Image.Image] = []
+
+    for page in doc:
+        pix = page.get_pixmap(matrix=mat, alpha=False)
+        img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+        images.append(img)
+
     return images
 
 # ──────────────────────────────────────────────────────────────
@@ -104,31 +92,36 @@ def convert_pdf_to_images(pdf_path: Path, *, dpi: int = 300) -> List[Any]:  # An
 # ──────────────────────────────────────────────────────────────
 
 def ocr_images(images: List[Any]) -> Tuple[str, List[List[Dict[str, Any]]]]:
-    """Run EasyOCR on each image.
-
-    Returns `(plain_text, per_page_json)` where `per_page_json` is suitable for
-    dumping to *.json* to inspect bounding boxes.
-    """
+    """Run EasyOCR on each image, converting PIL→numpy and bbox→list[int]."""
     page_texts: List[str] = []
     per_page_results: List[List[Dict[str, Any]]] = []
 
     for idx, img in enumerate(images, 1):
         logger.debug("OCR page %d/%d", idx, len(images))
-        result = reader.readtext(img, detail=1)  # list[ [bbox, text, confidence], ... ]
 
-        # Collect plain text in original reading order
-        page_txt = "\n".join(r[1] for r in result)
+        # PIL → numpy array
+        if hasattr(img, "convert"):
+            img_array = np.array(img)
+        else:
+            img_array = img
+
+        # EasyOCR
+        result = reader.readtext(img_array, detail=1)
+
+        # Собираем текст
+        page_txt = "\n".join(item[1] for item in result)
         page_texts.append(page_txt)
 
-        # Prepare JSON‑serialisable structure
-        page_json = [
-            {
-                "bbox": r[0],
-                "text": r[1],
-                "confidence": float(r[2]),
-            }
-            for r in result
-        ]
+        # Преобразуем bbox и формируем JSON-структуру
+        page_json: List[Dict[str, Any]] = []
+        for bbox, text, conf in result:
+            # bbox может быть numpy-массивом или списком; всегда конвертим в list[int]
+            coords = [int(x) for x in np.array(bbox).flatten().tolist()]
+            page_json.append({
+                "bbox": coords,
+                "text": text,
+                "confidence": float(conf),
+            })
         per_page_results.append(page_json)
 
     return "\n\n".join(page_texts), per_page_results
@@ -142,14 +135,19 @@ def save_results(
     page_json: List[List[Dict[str, Any]]],
     out_dir: Path,
 ) -> Tuple[Path, Path]:
-    """Write *result.txt* and *result.json* into *out_dir*; return their paths."""
+    """Write result.txt and result.json into out_dir; return their paths."""
     out_dir.mkdir(parents=True, exist_ok=True)
 
     txt_path = out_dir / "result.txt"
     json_path = out_dir / "result.json"
 
+    # plain text
     txt_path.write_text(plain_text, encoding="utf-8")
-    json_path.write_text(json.dumps(page_json, ensure_ascii=False, indent=2), encoding="utf-8")
+    # JSON — теперь все типы нативные Python, JSON-сериализатор пройдёт без ошибок
+    json_path.write_text(
+        json.dumps(page_json, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     logger.info("Saved %s and %s", txt_path, json_path)
     return txt_path, json_path

@@ -10,14 +10,25 @@ from pathlib import Path
 import logging
 import shutil, sys
 
-_poppler = Path(os.getenv("POPPLER_PATH", ""))
-if not (_poppler / "pdftoppm.exe").exists():
-    sys.exit("Poppler not found: проверьте POPPLER_PATH")
-
 try:
     from dotenv import load_dotenv
-except ImportError:  # fallback if python-dotenv isn’t installed yet
-    load_dotenv = None  # type: ignore
+except ImportError:
+    load_dotenv = None
+
+# ─ Paths & env ─────────────────────────────────────────────────────
+ROOT_DIR = Path(__file__).resolve().parent.parent
+ENV_FILE = ROOT_DIR / ".env"
+
+if load_dotenv is not None and ENV_FILE.exists():
+    load_dotenv(ENV_FILE)
+    logging.getLogger("uvicorn.error").info("Loaded environment from %s", ENV_FILE)
+else:
+    logging.getLogger("uvicorn.error").debug(".env file not found or python-dotenv missing")
+
+# ─ Metadata ───────────────────────────────────────────────────────
+__version__ = "0.1.0"
+__all__ = ["ROOT_DIR", "__version__"]
+
 
 # ──────────────────────────────────────────────────────────────
 # Paths & env
