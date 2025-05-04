@@ -16,7 +16,7 @@ except ImportError:  # fallback if python-dotenv isn’t installed yet
 # ──────────────────────────────────────────────────────────────
 # Paths & env
 # ──────────────────────────────────────────────────────────────
-ROOT_DIR = Path(__file__).resolve().parent.parent  # …/project_root
+ROOT_DIR = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT_DIR / ".env"
 
 if load_dotenv is not None and ENV_FILE.exists():
