@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}OCR‑PDF{% endblock %}</title>
+
+  <!-- общие стили -->
+  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <header class="site‑header">
+    <h1><a href="/">OCR‑PDF Demo</a></h1>
+  </header>
+
+  <main class="site‑content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site‑footer">
+    © {{ now().year }} — небольшой pet‑проект на FastAPI
+  </footer>
+
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>
