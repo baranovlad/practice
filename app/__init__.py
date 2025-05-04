@@ -5,6 +5,7 @@
 * Defines `__version__` for easy introspection.
 """
 
+import os
 from pathlib import Path
 import logging
 import shutil, sys
