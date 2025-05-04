@@ -86,10 +86,9 @@ app/             # исходный код FastAPI
 templates/       # Jinja2‑шаблоны (index.html, result.html, base.html)
 static/          # CSS и JS
 results/         # папка с результатами OCR
-tools/           # вспомогательные скрипты и Poppler (опционально)
 venv/            # виртуальное окружение (игнорируется)
 requirements.txt # зафиксированные зависимости
-Dockerfile       # конфигурация контейнера (если нужна)
+Dockerfile       # конфигурация контейнера
 README.md        # эта инструкция
 ```
 
