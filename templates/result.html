@@ -17,11 +17,11 @@
           <button type="submit">Обновить</button>
         </form>
       </div>
-    {% else %}
-      <div class="download-links">
-        <a href="{{ url_for('download_file', path=txt_filename) }}" class="btn">Скачать TXT</a>
-        <a href="{{ url_for('download_file', path=json_filename) }}" class="btn btn-secondary">Скачать JSON</a>
-      </div>
-    {% endif %}
+  {% else %}
+    <div class="download-links">
+      <a href="{{ txt_url }}" class="btn">Скачать TXT</a>
+      <a href="{{ json_url }}" class="btn btn-secondary">Скачать JSON</a>
+    </div>
+  {% endif %}
   </div>
 {% endblock %}
