@@ -28,7 +28,9 @@ from typing import Any, Dict, List, Tuple
 
 import easyocr
 from pdf2image import convert_from_path
-from PyPDF2 import PdfReader, PdfReadError
+from PyPDF2 import PdfReader
+from PyPDF2.errors import PdfReadError
+
 
 __all__ = [
     "is_pdf_textual",

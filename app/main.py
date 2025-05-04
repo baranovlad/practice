@@ -1,7 +1,3 @@
-paths = _result_paths(task_id)
-paths["folder"].mkdir(parents=True, exist_ok=True)   # маркируем «есть такая задача»
-bg.add_task(process_pdf, temp_pdf, task_id)
-RedirectResponse
 """FastAPI entry‑point for the OCR‑PDF demo.
 
 Highlights
@@ -25,13 +21,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Annotated
 
-from fastapi import (
-    BackgroundTasks,
-    FastAPI,
-    HTTPException,
-    Request,
-    UploadFile,
-)
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -53,18 +43,16 @@ RESULTS_DIR.mkdir(exist_ok=True)
 app = FastAPI(title="OCR‑PDF Demo", version="0.1.0")
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 # ──────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────
-
 def _save_upload_temp(upload: UploadFile) -> Path:
     """Write an `UploadFile` to a NamedTemporaryFile on disk and return path."""
     suffix = Path(upload.filename or "upload.pdf").suffix or ".pdf"
     tmp = NamedTemporaryFile(delete=False, suffix=suffix)
-    with tmp:  # keep file handle open for writting
+    with tmp:
         shutil.copyfileobj(upload.file, tmp)
     return Path(tmp.name)
 
@@ -84,16 +72,13 @@ async def process_pdf(temp_pdf: Path, task_id: str) -> None:
     try:
         ocr_utils.run_ocr(temp_pdf, out_dir)
     finally:
-        # clean the uploaded tmp‑file whatever happens
         temp_pdf.unlink(missing_ok=True)
 
 # ──────────────────────────────────────────────────────────────
 # Routes
 # ──────────────────────────────────────────────────────────────
-
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    """Render upload form."""
     return templates.TemplateResponse("index.html", {"request": request})
 
 
@@ -108,13 +93,13 @@ async def upload_pdf(
 
     task_id = uuid.uuid4().hex
     temp_pdf = _save_upload_temp(file)
+
+    # создаём папку задачи, чтобы /result/ сразу видел «processing»
     _result_paths(task_id)["folder"].mkdir(parents=True, exist_ok=True)
+
     bg.add_task(process_pdf, temp_pdf, task_id)
-    # браузер сам перейдёт на страницу результата
-    return RedirectResponse(
-        url=f"/result/{task_id}",
-        status_code=303,           # 303 — «перенаправь POST на GET»
-    )
+
+    return RedirectResponse(url=f"/result/{task_id}", status_code=303)
 
 
 @app.get("/result/{task_id}", response_class=HTMLResponse)
@@ -124,7 +109,6 @@ async def result_page(request: Request, task_id: str):
     if paths["txt"].exists() and paths["json"].exists():
         txt_url = app.url_path_for("download_file", task_id=task_id, filename="result.txt")
         json_url = app.url_path_for("download_file", task_id=task_id, filename="result.json")
-
         context = {
             "request": request,
             "processing": False,
@@ -135,14 +119,10 @@ async def result_page(request: Request, task_id: str):
         }
         return templates.TemplateResponse("result.html", context)
 
-    folder_exists = paths["folder"].exists()
-
-    if folder_exists:
-        # Файл ещё обрабатывается
+    if paths["folder"].exists():
         context = {"request": request, "processing": True, "error": None}
         return templates.TemplateResponse("result.html", context, status_code=202)
 
-    # неизвестный task_id
     context = {"request": request, "processing": False, "error": "Задача не найдена"}
     return templates.TemplateResponse("result.html", context, status_code=404)
 
@@ -150,19 +130,16 @@ async def result_page(request: Request, task_id: str):
 @app.get("/download/{task_id}/{filename}")
 async def download_file(task_id: str, filename: str):
     paths = _result_paths(task_id)
-    file_map = {"result.txt": paths["txt"], "result.json": paths["json"]}
-    target = file_map.get(filename)
+    target = {"result.txt": paths["txt"], "result.json": paths["json"]}.get(filename)
 
     if not target or not target.exists():
         raise HTTPException(404, "File not found")
 
     return FileResponse(target, media_type="application/octet-stream", filename=filename)
 
-
 # ──────────────────────────────────────────────────────────────
 # Dev helper (optional)
 # ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":  # pragma: no cover
     import uvicorn
-
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
