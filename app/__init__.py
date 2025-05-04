@@ -15,21 +15,6 @@ try:
 except ImportError:
     load_dotenv = None
 
-# ─ Paths & env ─────────────────────────────────────────────────────
-ROOT_DIR = Path(__file__).resolve().parent.parent
-ENV_FILE = ROOT_DIR / ".env"
-
-if load_dotenv is not None and ENV_FILE.exists():
-    load_dotenv(ENV_FILE)
-    logging.getLogger("uvicorn.error").info("Loaded environment from %s", ENV_FILE)
-else:
-    logging.getLogger("uvicorn.error").debug(".env file not found or python-dotenv missing")
-
-# ─ Metadata ───────────────────────────────────────────────────────
-__version__ = "0.1.0"
-__all__ = ["ROOT_DIR", "__version__"]
-
-
 # ──────────────────────────────────────────────────────────────
 # Paths & env
 # ──────────────────────────────────────────────────────────────
