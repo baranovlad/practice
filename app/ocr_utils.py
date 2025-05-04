@@ -1,125 +1,170 @@
+"""Utility helpers for OCR‑processing PDF files.
+
+Designed for a tiny CPU‑only server; keeps dependencies minimal:
+* **EasyOCR** — text detection/recognition on raster pages.
+* **PyPDF2**  — cheap check whether a PDF already contains selectable text.
+* **pdf2image** — Poppler‑based rasterisation (needs `poppler-utils` on host).
+
+The public interface is just two functions:
+
+```
+>>> from app import ocr_utils as ocr
+>>> txt_path, json_path = ocr.run_ocr(Path("/path/to/file.pdf"), Path("results/123"))
+```
+
+— If the PDF is *textual* (copy‑paste works), we skip OCR and extract text via
+  PyPDF2.
+— Otherwise the file is rasterised page‑by‑page and passed to EasyOCR.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any, Dict, List, Tuple
+
 import easyocr
 from pdf2image import convert_from_path
-import numpy as np
-import json
-import os
-import PyPDF2
-import asyncio
-import urllib3
-import requests
-import tempfile
-import logging
+from PyPDF2 import PdfReader, PdfReadError
 
+__all__ = [
+    "is_pdf_textual",
+    "extract_text_pdf",
+    "convert_pdf_to_images",
+    "ocr_images",
+    "save_results",
+    "run_ocr",
+]
 
-class ChangeDir:
-    def __init__(self, path):
-        self.original_path = os.getcwd()
-        self.path = path
+logger = logging.getLogger(__name__)
 
-    def __enter__(self):
-        os.chdir(self.path)
-        return self
+# ──────────────────────────────────────────────────────────────
+# Global OCR reader (lazy‑loaded) — avoids model reload per page
+# ──────────────────────────────────────────────────────────────
+_GPU_ENV = os.getenv("EASYOCR_GPU", "0")
+USE_GPU = _GPU_ENV in {"1", "true", "yes"}
 
-    def __exit__(self, exp_type, exp_value, traceback):
-        os.chdir(self.original_path)
-        return True
+logger.info("Initialising EasyOCR (GPU=%s)", USE_GPU)
+reader = easyocr.Reader(["ru", "en"], gpu=USE_GPU)
 
+# ──────────────────────────────────────────────────────────────
+# Step 1: quick heuristic — is PDF already textual?
+# ──────────────────────────────────────────────────────────────
 
-urllib3.disable_warnings()
-reader = easyocr.Reader(['en', 'ru'], gpu=True)
+def is_pdf_textual(pdf_path: Path, *, min_chars: int = 20) -> bool:
+    """Return *True* if the first page appears to contain textual content.
 
-
-async def upload_file(url, out_dir):
-    with ChangeDir(out_dir):
-        with open(f"pdf_for_ocr.pdf", 'wb') as f:
-            try:
-                f.write(requests.get(str(url), verify=False).content)
-            except Exception as e:
-                logging.info(f"Error downloading PDF: {e}")
-
-
-def is_pdf_textual(pdf_path):
-    with open(pdf_path, 'rb') as file:
-        reader = PyPDF2.PdfReader(file)
-        if reader.pages[0].extract_text() is not None:
-            return True
-        else:
-            return False
-
-
-def convert_pdf_to_images(pdf_path, dpi=300):
-    """Извлекает изображения из PDF."""
+    We attempt to read the first page and count how many non‑whitespace
+    characters it has.  If the PDF is protected or malformed, we assume it is
+    *not* textual to fall back to OCR.
+    """
     try:
-        images = convert_from_path(pdf_path, dpi=dpi, poppler_path=os.path.join(os.getcwd(), r"poppler-24.08.0\Library\bin"))
-        return images
-
-    except Exception as e:
-        logging.info(f"Ошибка при конвертации PDF: {e}")
-
-
-def run_ocr_on_image(img, reader):
-    """Распознаёт текст с помощью EasyOCR."""
-    try:
-        image_np = np.array(img)
-        text_blocks = reader.readtext(image_np, detail=0)  # Только текст
-        page_text = "\n".join(text_blocks)  # Объединяем все блоки в одну строку
-        return page_text
-
-    except Exception as e:
-        logging.info(f"Ошибка при распознавании текста: {e}")
-        return ""
+        reader_pdf = PdfReader(str(pdf_path))
+        first_page = reader_pdf.pages[0]
+        text = first_page.extract_text() or ""
+        textual = len(text.strip()) >= min_chars
+        logger.debug("Textual‑check: %s — %s chars found", pdf_path.name, len(text))
+        return textual
+    except (PdfReadError, IndexError, FileNotFoundError) as exc:
+        logger.warning("Failed textual check for %s: %s — falling back to OCR", pdf_path.name, exc)
+        return False
 
 
-def collect_results(pages, out_dir):
-    """Сохраняет текст в файл."""
-    try:
-        formatted_json = json.dumps(pages, indent=4, ensure_ascii=False)
+def extract_text_pdf(pdf_path: Path) -> str:
+    """Extract *all* text with PyPDF2 (fast, no OCR)."""
+    reader_pdf = PdfReader(str(pdf_path))
+    all_pages = []
+    for page in reader_pdf.pages:
+        all_pages.append(page.extract_text() or "")
+    return "\n\n".join(all_pages)
 
-        with open(out_dir, 'w', encoding='utf-8') as file:
-            file.write(formatted_json)
-            return out_dir
-    except Exception as e:
-        logging.info(f"Ошибка при сохранении файла: {e}")
+# ──────────────────────────────────────────────────────────────
+# Step 2: rasterise pages → images
+# ──────────────────────────────────────────────────────────────
 
+def convert_pdf_to_images(pdf_path: Path, *, dpi: int = 300) -> List[Any]:  # Any = PIL.Image
+    """Rasterise each PDF page to a PIL Image (RGB).
 
-# def main():
-#     pdf_path = input("Введите путь к PDF: ").strip()
-#     if not os.path.exists(pdf_path):
-#         print("Указанный файл PDF не существует!")
-#         return
-#
-#     output_path = input("Куда сохранить текст (например, output.txt): ").strip()
-#
-#     with tempfile.TemporaryDirectory() as temp_dir:
-#         print("Извлекаем изображения из PDF...")
-#         images = convert_pdf_to_images(pdf_path, dpi=300)
-#
-#         if not images:
-#             print("Не удалось извлечь изображения из PDF.")
-#             return
-#
-#         print("Распознаём текст с помощью EasyOCR...")
-#         page_text = ""
-#
-#         result = {
-#             "source_pdf": pdf_path,
-#             "pages": []
-#         }
-#
-#         for page_num, img in enumerate(images, start=1):
-#             page_text = ""
-#             text = run_ocr_on_image(img, reader)
-#             page_text += text + "\n\n"
-#
-#             result["pages"].append({
-#                 "page_number": page_num,
-#                 "text": page_text.strip()
-#             })
-#
-#         print("Сохраняем результат...")
-#         collect_results(result, output_path)
-#
-#     print(f"Готово! Текст сохранён в {output_path}")
-#
-# if __name__ == "__main__":
-#     main()
+    The Poppler binary location can be overridden via `POPPLER_PATH` env var.
+    """
+    poppler_path = os.getenv("POPPLER_PATH")
+    logger.debug("Rasterising %s (dpi=%s, poppler=%s)", pdf_path.name, dpi, poppler_path)
+    images = convert_from_path(
+        str(pdf_path), dpi=dpi, fmt="jpeg", poppler_path=poppler_path, thread_count=2
+    )
+    return images
+
+# ──────────────────────────────────────────────────────────────
+# Step 3: OCR on images
+# ──────────────────────────────────────────────────────────────
+
+def ocr_images(images: List[Any]) -> Tuple[str, List[List[Dict[str, Any]]]]:
+    """Run EasyOCR on each image.
+
+    Returns `(plain_text, per_page_json)` where `per_page_json` is suitable for
+    dumping to *.json* to inspect bounding boxes.
+    """
+    page_texts: List[str] = []
+    per_page_results: List[List[Dict[str, Any]]] = []
+
+    for idx, img in enumerate(images, 1):
+        logger.debug("OCR page %d/%d", idx, len(images))
+        result = reader.readtext(img, detail=1)  # list[ [bbox, text, confidence], ... ]
+
+        # Collect plain text in original reading order
+        page_txt = "\n".join(r[1] for r in result)
+        page_texts.append(page_txt)
+
+        # Prepare JSON‑serialisable structure
+        page_json = [
+            {
+                "bbox": r[0],
+                "text": r[1],
+                "confidence": float(r[2]),
+            }
+            for r in result
+        ]
+        per_page_results.append(page_json)
+
+    return "\n\n".join(page_texts), per_page_results
+
+# ──────────────────────────────────────────────────────────────
+# Step 4: save
+# ──────────────────────────────────────────────────────────────
+
+def save_results(
+    plain_text: str,
+    page_json: List[List[Dict[str, Any]]],
+    out_dir: Path,
+) -> Tuple[Path, Path]:
+    """Write *result.txt* and *result.json* into *out_dir*; return their paths."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    txt_path = out_dir / "result.txt"
+    json_path = out_dir / "result.json"
+
+    txt_path.write_text(plain_text, encoding="utf-8")
+    json_path.write_text(json.dumps(page_json, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    logger.info("Saved %s and %s", txt_path, json_path)
+    return txt_path, json_path
+
+# ──────────────────────────────────────────────────────────────
+# High‑level helper used by FastAPI background task
+# ──────────────────────────────────────────────────────────────
+
+def run_ocr(pdf_path: Path, out_dir: Path) -> Tuple[Path, Path]:
+    """Full pipeline: decide, OCR if нужно, сохранить файлы, вернуть пути."""
+
+    if is_pdf_textual(pdf_path):
+        logger.info("%s detected as textual — extracting text via PyPDF2", pdf_path.name)
+        text = extract_text_pdf(pdf_path)
+        return save_results(text, [], out_dir)
+
+    # else → rasterise + OCR
+    images = convert_pdf_to_images(pdf_path)
+    text, per_page = ocr_images(images)
+    return save_results(text, per_page, out_dir)
