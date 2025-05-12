@@ -12,6 +12,9 @@ import fitz
 from PIL import Image
 from PyPDF2 import PdfReader
 from PyPDF2.errors import PdfReadError
+import torch
+from transformers import AutoProcessor, AutoModelForImageTextToText
+from qwen_vl_utils import process_vision_info
 
 
 __all__ = [
@@ -23,16 +26,30 @@ __all__ = [
     "run_ocr",
 ]
 
+
 logger = logging.getLogger(__name__)
+MODEL_NAME = os.getenv("MODEl_NAME", default="EasyOCR") # Возвращает имя модели, по умолчанию: EasyOCR
 
 # ──────────────────────────────────────────────────────────────
-# Global OCR reader (lazy‑loaded) — avoids model reload per page
+# EasyOCR reader (lazy‑loaded) — avoids model reload per page
 # ──────────────────────────────────────────────────────────────
+
 _GPU_ENV = os.getenv("EASYOCR_GPU", "0")
 USE_GPU = _GPU_ENV in {"1", "true", "yes"}
 
 logger.info("Initialising EasyOCR (GPU=%s)", USE_GPU)
 reader = easyocr.Reader(["ru", "en"], gpu=USE_GPU)
+
+# ──────────────────────────────────────────────────────────────
+# RolmOCR reader
+# ──────────────────────────────────────────────────────────────
+
+device = torch.device("cuda")
+model = AutoModelForImageTextToText.from_pretrained(
+    "reducto/RolmOCR",
+    torch_dtype="auto", device_map="auto",
+    trust_remote_code=True)
+processor = AutoProcessor.from_pretrained("reducto/RolmOCR", trust_remote_code=True, use_fast=False, device_map="auto")
 
 # ──────────────────────────────────────────────────────────────
 # Step 1: quick heuristic — is PDF already textual?
@@ -71,7 +88,7 @@ def extract_text_pdf(pdf_path: Path) -> str:
 
 def convert_pdf_to_images(pdf_path: Path, *, dpi: int = 300) -> list[Image.Image]:
     """
-    Рендерит каждую страницу PDF в PIL.Image через MuPDF с нужным DPI.
+    Рендерит каждую страницу PDF в PIL.Image через MyPDF с нужным DPI.
     DPI ≈ 72 * zoom, следовательно zoom = dpi / 72.
     """
     zoom = dpi / 72  # e.g. для 300 DPI — ≈4.17
@@ -92,37 +109,73 @@ def convert_pdf_to_images(pdf_path: Path, *, dpi: int = 300) -> list[Image.Image
 # ──────────────────────────────────────────────────────────────
 
 def ocr_images(images: List[Any]) -> Tuple[str, List[List[Dict[str, Any]]]]:
-    """Run EasyOCR on each image, converting PIL→numpy and bbox→list[int]."""
+    """Run OCR model on each image, converting PIL→numpy and bbox→list[int]."""
     page_texts: List[str] = []
     per_page_results: List[List[Dict[str, Any]]] = []
 
     for idx, img in enumerate(images, 1):
         logger.debug("OCR page %d/%d", idx, len(images))
 
-        # PIL → numpy array
-        if hasattr(img, "convert"):
-            img_array = np.array(img)
-        else:
-            img_array = img
+        if MODEL_NAME == "EasyOCR":
+            # PIL → numpy array
+            if hasattr(img, "convert"):
+                img_array = np.array(img)
+            else:
+                img_array = img
 
-        # EasyOCR
-        result = reader.readtext(img_array, detail=1)
+            # EasyOCR
+            result = reader.readtext(img_array, detail=1)
 
-        # Собираем текст
-        page_txt = "\n".join(item[1] for item in result)
-        page_texts.append(page_txt)
+            # Собираем текст
+            page_txt = "\n".join(item[1] for item in result)
+            page_texts.append(page_txt)
 
-        # Преобразуем bbox и формируем JSON-структуру
-        page_json: List[Dict[str, Any]] = []
-        for bbox, text, conf in result:
-            # bbox может быть numpy-массивом или списком; всегда конвертим в list[int]
-            coords = [int(x) for x in np.array(bbox).flatten().tolist()]
-            page_json.append({
-                "bbox": coords,
-                "text": text,
-                "confidence": float(conf),
-            })
-        per_page_results.append(page_json)
+            # Преобразуем bbox и формируем JSON-структуру
+            page_json: List[Dict[str, Any]] = []
+            for bbox, text, conf in result:
+                # bbox может быть numpy-массивом или списком; всегда конвертим в list[int]
+                coords = [int(x) for x in np.array(bbox).flatten().tolist()]
+                page_json.append({
+                    "bbox": coords,
+                    "text": text,
+                    "confidence": float(conf),
+                })
+            per_page_results.append(page_json)
+
+        if MODEL_NAME == "RolmOCR":
+            question = f"Extract the text from this image"
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": img},
+                        {"type": "text", "text": question},
+                    ],
+                },
+            ]
+            text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            image_inputs, video_inputs = process_vision_info(messages)
+            inputs = processor(
+                text=[text],
+                images=image_inputs,
+                videos=video_inputs,
+                padding=True,
+                return_tensors="pt",
+            )
+            inputs = inputs.to("cuda")
+            generated_ids = model.generate(**inputs, max_new_tokens=128)
+            generated_ids_trimmed = [
+                out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+            ]
+            page_txt = processor.batch_decode(
+                generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+            )
+            page_texts.append("".join(page_txt))
+
+            # Формируем JSON-структуру
+            page_json: List[Dict[str, Any]] = []
+            page_json.append({"text": text})
+            per_page_results.append(page_json)
 
     return "\n\n".join(page_texts), per_page_results
 
