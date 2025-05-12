@@ -88,7 +88,7 @@ def extract_text_pdf(pdf_path: Path) -> str:
 
 def convert_pdf_to_images(pdf_path: Path, *, dpi: int = 300) -> list[Image.Image]:
     """
-    Рендерит каждую страницу PDF в PIL.Image через MyPDF с нужным DPI.
+    Рендерит каждую страницу PDF в PIL.Image через PyMuPDF (fitz) с нужным DPI.
     DPI ≈ 72 * zoom, следовательно zoom = dpi / 72.
     """
     zoom = dpi / 72  # e.g. для 300 DPI — ≈4.17
