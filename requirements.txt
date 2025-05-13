@@ -6,3 +6,7 @@ easyocr
 pillow
 jinja2
 python-multipart
+transformers
+qwen_vl_utils
+torch
+fitz
