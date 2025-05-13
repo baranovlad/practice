@@ -13,9 +13,9 @@
     <h1>Загрузить PDF для OCR</h1>
     <form action="/upload" method="post" enctype="multipart/form-data">
       <input type="file" name="file" required>
-      <select name="model">
-        <option value="local">Локальная модель</option>
-        <option value="server">Серверная модель</option>
+      <select id="modelSelect" name="model">
+        <option value="EasyOCR">EasyOCR (быстро, без GPU)</option>
+        <option value="RolmOCR">RolmOCR (точнее, требует GPU)</option>
       </select>
       <button type="submit">Отправить</button>
     </form>

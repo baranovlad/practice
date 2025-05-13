@@ -1,223 +1,137 @@
 from __future__ import annotations
 
+"""Light‑weight OCR utilities (lazy‑loading heavy models).
+
+* EasyOCR initialises instantly and is the default.
+* RolmOCR (≈12 GB) загружается ТОЛЬКО при первом запросе **и** без
+  `device_map`, чтобы избежать ошибки *offload the whole model to disk*.
+"""
+
 import json
 import logging
 import os
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Tuple
+
 import numpy as np
 import easyocr
 import fitz
 from PIL import Image
 from PyPDF2 import PdfReader
 from PyPDF2.errors import PdfReadError
-import torch
-from transformers import AutoProcessor, AutoModelForImageTextToText
-from qwen_vl_utils import process_vision_info
-
 
 __all__ = [
-    "is_pdf_textual",
-    "extract_text_pdf",
-    "convert_pdf_to_images",
-    "ocr_images",
-    "save_results",
     "run_ocr",
 ]
 
-
 logger = logging.getLogger(__name__)
-MODEL_NAME = os.getenv("MODEl_NAME", default="EasyOCR") # Возвращает имя модели, по умолчанию: EasyOCR
+DEFAULT_MODEL = os.getenv("MODEL_NAME", "EasyOCR")
 
-# ──────────────────────────────────────────────────────────────
-# EasyOCR reader (lazy‑loaded) — avoids model reload per page
-# ──────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------
+# EasyOCR (fast, small)
+# ------------------------------------------------------------------
+reader_easy = easyocr.Reader(["ru", "en"], gpu=os.getenv("EASYOCR_GPU", "0") in {"1", "true", "yes"})
+logger.info("EasyOCR initialised")
 
-_GPU_ENV = os.getenv("EASYOCR_GPU", "0")
-USE_GPU = _GPU_ENV in {"1", "true", "yes"}
+# ------------------------------------------------------------------
+# RolmOCR — lazy load, no device_map
+# ------------------------------------------------------------------
+_rolm_model = None
+_rolm_processor = None
 
-logger.info("Initialising EasyOCR (GPU=%s)", USE_GPU)
-reader = easyocr.Reader(["ru", "en"], gpu=USE_GPU)
 
-# ──────────────────────────────────────────────────────────────
-# RolmOCR reader
-# ──────────────────────────────────────────────────────────────
+def _load_rolm():
+    global _rolm_model, _rolm_processor  # pylint: disable=global-statement
+    if _rolm_model is not None:
+        return _rolm_model, _rolm_processor
 
-device = torch.device("cuda")
-model = AutoModelForImageTextToText.from_pretrained(
-    "reducto/RolmOCR",
-    torch_dtype="auto", device_map="auto",
-    trust_remote_code=True)
-processor = AutoProcessor.from_pretrained("reducto/RolmOCR", trust_remote_code=True, use_fast=False, device_map="auto")
+    import torch  # heavy only if really needed
+    from transformers import AutoProcessor, AutoModelForImageTextToText
 
-# ──────────────────────────────────────────────────────────────
-# Step 1: quick heuristic — is PDF already textual?
-# ──────────────────────────────────────────────────────────────
+    logger.info("Loading RolmOCR (CPU mode)")
+    _rolm_model = AutoModelForImageTextToText.from_pretrained(
+        "reducto/RolmOCR",
+        torch_dtype="auto",
+        trust_remote_code=True,
+        low_cpu_mem_usage=True,
+    ).to("cpu")
 
-def is_pdf_textual(pdf_path: Path, *, min_chars: int = 20) -> bool:
-    """Return *True* if the first page appears to contain textual content.
+    _rolm_processor = AutoProcessor.from_pretrained(
+        "reducto/RolmOCR", trust_remote_code=True, use_fast=False
+    )
+    return _rolm_model, _rolm_processor
 
-    We attempt to read the first page and count how many non‑whitespace
-    characters it has.  If the PDF is protected or malformed, we assume it is
-    *not* textual to fall back to OCR.
-    """
+# ------------------------------------------------------------------
+# OCR pipeline helpers
+# ------------------------------------------------------------------
+
+def _is_pdf_textual(pdf_path: Path, *, min_chars: int = 20) -> bool:
     try:
-        reader_pdf = PdfReader(str(pdf_path))
-        first_page = reader_pdf.pages[0]
-        text = first_page.extract_text() or ""
-        textual = len(text.strip()) >= min_chars
-        logger.debug("Textual‑check: %s — %s chars found", pdf_path.name, len(text))
-        return textual
-    except (PdfReadError, IndexError, FileNotFoundError) as exc:
-        logger.warning("Failed textual check for %s: %s — falling back to OCR", pdf_path.name, exc)
+        reader = PdfReader(str(pdf_path))
+        return len((reader.pages[0].extract_text() or "").strip()) >= min_chars
+    except Exception:  # pylint: disable=broad-except
         return False
 
 
-def extract_text_pdf(pdf_path: Path) -> str:
-    """Extract *all* text with PyPDF2 (fast, no OCR)."""
-    reader_pdf = PdfReader(str(pdf_path))
-    all_pages = []
-    for page in reader_pdf.pages:
-        all_pages.append(page.extract_text() or "")
-    return "\n\n".join(all_pages)
-
-# ──────────────────────────────────────────────────────────────
-# Step 2: rasterise pages → images
-# ──────────────────────────────────────────────────────────────
-
-def convert_pdf_to_images(pdf_path: Path, *, dpi: int = 300) -> list[Image.Image]:
-    """
-    Рендерит каждую страницу PDF в PIL.Image через PyMuPDF (fitz) с нужным DPI.
-    DPI ≈ 72 * zoom, следовательно zoom = dpi / 72.
-    """
-    zoom = dpi / 72  # e.g. для 300 DPI — ≈4.17
+def _pdf_to_images(pdf_path: Path, dpi: int = 200) -> list[Image.Image]:
+    zoom = dpi / 72
     mat = fitz.Matrix(zoom, zoom)
+    with fitz.open(str(pdf_path)) as doc:
+        return [
+            Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            for page in doc
+            for pix in [page.get_pixmap(matrix=mat, alpha=False)]
+        ]
 
-    doc = fitz.open(str(pdf_path))
-    images: list[Image.Image] = []
 
-    for page in doc:
-        pix = page.get_pixmap(matrix=mat, alpha=False)
-        img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
-        images.append(img)
+def _ocr_images(images: list[Any], model_name: str) -> Tuple[str, List[List[Dict[str, Any]]]]:
+    texts, pages_json = [], []
+    for img in images:
+        if model_name == "EasyOCR":
+            result = reader_easy.readtext(np.array(img), detail=1)
+            texts.append("\n".join(r[1] for r in result))
+            pages_json.append([
+                {"bbox": np.array(r[0]).flatten().tolist(), "text": r[1], "conf": float(r[2])}
+                for r in result
+            ])
+        else:  # RolmOCR
+            model, processor = _load_rolm()
+            from qwen_vl_utils import process_vision_info
 
-    return images
+            messages = [{
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": img},
+                    {"type": "text", "text": "Extract the text from this image"},
+                ],
+            }]
+            prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            imgs, vids = process_vision_info(messages)
+            batch = processor(text=[prompt], images=imgs, videos=vids, padding=True, return_tensors="pt")
+            out = model.generate(**batch, max_new_tokens=128)
+            text = processor.batch_decode(out[:, batch.input_ids.shape[1]:], skip_special_tokens=True)[0]
+            texts.append(text)
+            pages_json.append([{"text": text}])
+    return "\n\n".join(texts), pages_json
 
-# ──────────────────────────────────────────────────────────────
-# Step 3: OCR on images
-# ──────────────────────────────────────────────────────────────
 
-def ocr_images(images: List[Any]) -> Tuple[str, List[List[Dict[str, Any]]]]:
-    """Run OCR model on each image, converting PIL→numpy and bbox→list[int]."""
-    page_texts: List[str] = []
-    per_page_results: List[List[Dict[str, Any]]] = []
+def _save(text: str, page_json: list[list[dict[str, Any]]], out: Path):
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "result.txt").write_text(text, "utf-8")
+    (out / "result.json").write_text(json.dumps(page_json, ensure_ascii=False, indent=2), "utf-8")
 
-    for idx, img in enumerate(images, 1):
-        logger.debug("OCR page %d/%d", idx, len(images))
 
-        if MODEL_NAME == "EasyOCR":
-            # PIL → numpy array
-            if hasattr(img, "convert"):
-                img_array = np.array(img)
-            else:
-                img_array = img
+# ------------------------------------------------------------------
+# Public API
+# ------------------------------------------------------------------
 
-            # EasyOCR
-            result = reader.readtext(img_array, detail=1)
+def run_ocr(pdf_path: Path, out_dir: Path, *, model_name: str = DEFAULT_MODEL):
+    if _is_pdf_textual(pdf_path):
+        from PyPDF2 import PdfReader
+        txt = "\n\n".join(p.extract_text() or "" for p in PdfReader(str(pdf_path)).pages)
+        _save(txt, [], out_dir)
+        return
 
-            # Собираем текст
-            page_txt = "\n".join(item[1] for item in result)
-            page_texts.append(page_txt)
-
-            # Преобразуем bbox и формируем JSON-структуру
-            page_json: List[Dict[str, Any]] = []
-            for bbox, text, conf in result:
-                # bbox может быть numpy-массивом или списком; всегда конвертим в list[int]
-                coords = [int(x) for x in np.array(bbox).flatten().tolist()]
-                page_json.append({
-                    "bbox": coords,
-                    "text": text,
-                    "confidence": float(conf),
-                })
-            per_page_results.append(page_json)
-
-        if MODEL_NAME == "RolmOCR":
-            question = f"Extract the text from this image"
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": img},
-                        {"type": "text", "text": question},
-                    ],
-                },
-            ]
-            text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-            image_inputs, video_inputs = process_vision_info(messages)
-            inputs = processor(
-                text=[text],
-                images=image_inputs,
-                videos=video_inputs,
-                padding=True,
-                return_tensors="pt",
-            )
-            inputs = inputs.to("cuda")
-            generated_ids = model.generate(**inputs, max_new_tokens=128)
-            generated_ids_trimmed = [
-                out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-            ]
-            page_txt = processor.batch_decode(
-                generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
-            )
-            page_texts.append("".join(page_txt))
-
-            # Формируем JSON-структуру
-            page_json: List[Dict[str, Any]] = []
-            page_json.append({"text": text})
-            per_page_results.append(page_json)
-
-    return "\n\n".join(page_texts), per_page_results
-
-# ──────────────────────────────────────────────────────────────
-# Step 4: save
-# ──────────────────────────────────────────────────────────────
-
-def save_results(
-    plain_text: str,
-    page_json: List[List[Dict[str, Any]]],
-    out_dir: Path,
-) -> Tuple[Path, Path]:
-    """Write result.txt and result.json into out_dir; return their paths."""
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    txt_path = out_dir / "result.txt"
-    json_path = out_dir / "result.json"
-
-    # plain text
-    txt_path.write_text(plain_text, encoding="utf-8")
-    # JSON — теперь все типы нативные Python, JSON-сериализатор пройдёт без ошибок
-    json_path.write_text(
-        json.dumps(page_json, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-    logger.info("Saved %s and %s", txt_path, json_path)
-    return txt_path, json_path
-
-# ──────────────────────────────────────────────────────────────
-# High‑level helper used by FastAPI background task
-# ──────────────────────────────────────────────────────────────
-
-def run_ocr(pdf_path: Path, out_dir: Path) -> Tuple[Path, Path]:
-    """Full pipeline: decide, OCR if нужно, сохранить файлы, вернуть пути."""
-
-    if is_pdf_textual(pdf_path):
-        logger.info("%s detected as textual — extracting text via PyPDF2", pdf_path.name)
-        text = extract_text_pdf(pdf_path)
-        return save_results(text, [], out_dir)
-
-    # else → rasterise + OCR
-    images = convert_pdf_to_images(pdf_path)
-    text, per_page = ocr_images(images)
-    return save_results(text, per_page, out_dir)
+    imgs = _pdf_to_images(pdf_path)
+    text, pages = _ocr_images(imgs, model_name)
+    _save(text, pages, out_dir)

@@ -1,55 +1,48 @@
-"""FastAPI entry‑point for the OCR‑PDF demo.
-
-Highlights
-──────────
-* Minimal background‑task workflow (no Celery):
-  uploads go to a temp file → background coroutine `process_pdf()`
-  runs OCR and writes results into `results/<task_id>/`.
-* Jinja2 templates served from *templates/*, static files from *static/*.
-* Endpoints
-    GET  /               — форма загрузки
-    POST /upload         — принимает PDF, возвращает JSON с `task_id`
-    GET  /result/{id}    — HTML‑страница: «обрабатывается» или ссылки на файлы
-    GET  /download/{id}/{filename} — отдаёт TXT/JSON
-"""
-
 from __future__ import annotations
+
+"""FastAPI entry‑point for the OCR‑PDF demo (model switch‑ready)."""
 
 import shutil
 import uuid
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Annotated
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    FastAPI,
+    HTTPException,
+    Request,
+    UploadFile,
+    File,
+    Form,
+)
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import ocr_utils
+from .ocr_utils import run_ocr
 
-# ──────────────────────────────────────────────────────────────
-# Paths & constants
-# ──────────────────────────────────────────────────────────────
-ROOT_DIR = Path(__file__).resolve().parent.parent
-TEMPLATES_DIR = ROOT_DIR / "templates"
-STATIC_DIR = ROOT_DIR / "static"
-RESULTS_DIR = ROOT_DIR / "results"
+# ------------------------------------------------------------------
+# Paths
+# ------------------------------------------------------------------
+ROOT = Path(__file__).resolve().parent.parent
+TEMPLATES_DIR = ROOT / "templates"
+STATIC_DIR = ROOT / "static"
+RESULTS_DIR = ROOT / "results"
 RESULTS_DIR.mkdir(exist_ok=True)
 
-# ──────────────────────────────────────────────────────────────
-# FastAPI app
-# ──────────────────────────────────────────────────────────────
-app = FastAPI(title="OCR‑PDF Demo", version="0.1.0")
+# ------------------------------------------------------------------
+# App
+# ------------------------------------------------------------------
+app = FastAPI(title="OCR‑PDF Demo", version="0.3.0")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-
-# ──────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------
 # Helpers
-# ──────────────────────────────────────────────────────────────
-def _save_upload_temp(upload: UploadFile) -> Path:
-    """Write an `UploadFile` to a NamedTemporaryFile on disk and return path."""
+# ------------------------------------------------------------------
+
+def _save_upload(upload: UploadFile) -> Path:
     suffix = Path(upload.filename or "upload.pdf").suffix or ".pdf"
     tmp = NamedTemporaryFile(delete=False, suffix=suffix)
     with tmp:
@@ -57,26 +50,26 @@ def _save_upload_temp(upload: UploadFile) -> Path:
     return Path(tmp.name)
 
 
-def _result_paths(task_id: str) -> dict[str, Path]:
-    folder = RESULTS_DIR / task_id
-    return {
-        "folder": folder,
-        "txt": folder / "result.txt",
-        "json": folder / "result.json",
-    }
+class Results:
+    """Wraps result file paths for a given task ID."""
+
+    def __init__(self, task_id: str):
+        self.folder = RESULTS_DIR / task_id
+        self.txt = self.folder / "result.txt"
+        self.json = self.folder / "result.json"
 
 
-async def process_pdf(temp_pdf: Path, task_id: str) -> None:
-    """Background coroutine: run OCR and store output under `results/<id>/`."""
-    out_dir = RESULTS_DIR / task_id
+async def _process_pdf(src: Path, task_id: str, model_name: str) -> None:
     try:
-        ocr_utils.run_ocr(temp_pdf, out_dir)
+        run_ocr(src, RESULTS_DIR / task_id, model_name=model_name)
     finally:
-        temp_pdf.unlink(missing_ok=True)
+        src.unlink(missing_ok=True)
 
-# ──────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------
 # Routes
-# ──────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
@@ -84,62 +77,66 @@ async def index(request: Request):
 
 @app.post("/upload")
 async def upload_pdf(
-    request: Request,
-    file: Annotated[UploadFile, "PDF file to process"],
+    request: Request,  # keeps client IP etc. for logs if needed
     bg: BackgroundTasks,
+    file: UploadFile = File(...),
+    model: str = Form("EasyOCR"),
 ):
+    """Receive PDF and chosen model, spawn background OCR job."""
     if file.content_type not in {"application/pdf", "application/x-pdf"}:
-        raise HTTPException(415, "File must be PDF")
+        raise HTTPException(415, "Only PDF files are accepted")
 
     task_id = uuid.uuid4().hex
-    temp_pdf = _save_upload_temp(file)
+    tmp_pdf = _save_upload(file)
 
-    # создаём папку задачи, чтобы /result/ сразу видел «processing»
-    _result_paths(task_id)["folder"].mkdir(parents=True, exist_ok=True)
-
-    bg.add_task(process_pdf, temp_pdf, task_id)
+    Results(task_id).folder.mkdir(parents=True, exist_ok=True)  # flag as processing
+    bg.add_task(_process_pdf, tmp_pdf, task_id, model)
 
     return RedirectResponse(url=f"/result/{task_id}", status_code=303)
 
 
 @app.get("/result/{task_id}", response_class=HTMLResponse)
 async def result_page(request: Request, task_id: str):
-    paths = _result_paths(task_id)
+    res = Results(task_id)
 
-    if paths["txt"].exists() and paths["json"].exists():
-        txt_url = app.url_path_for("download_file", task_id=task_id, filename="result.txt")
-        json_url = app.url_path_for("download_file", task_id=task_id, filename="result.json")
-        context = {
-            "request": request,
-            "processing": False,
-            "error": None,
-            "txt_url": txt_url,
-            "json_url": json_url,
-            "task_id": task_id,
-        }
-        return templates.TemplateResponse("result.html", context)
+    if res.txt.exists() and res.json.exists():
+        return templates.TemplateResponse(
+            "result.html",
+            {
+                "request": request,
+                "processing": False,
+                "task_id": task_id,
+                "txt_url": app.url_path_for("download_file", task_id=task_id, filename="result.txt"),
+                "json_url": app.url_path_for("download_file", task_id=task_id, filename="result.json"),
+            },
+        )
 
-    if paths["folder"].exists():
-        context = {"request": request, "processing": True, "error": None}
-        return templates.TemplateResponse("result.html", context, status_code=202)
+    if res.folder.exists():
+        return templates.TemplateResponse(
+            "result.html", {"request": request, "processing": True}, status_code=202
+        )
 
-    context = {"request": request, "processing": False, "error": "Задача не найдена"}
-    return templates.TemplateResponse("result.html", context, status_code=404)
+    return templates.TemplateResponse(
+        "result.html",
+        {"request": request, "processing": False, "error": "Task not found"},
+        status_code=404,
+    )
 
 
 @app.get("/download/{task_id}/{filename}")
 async def download_file(task_id: str, filename: str):
-    paths = _result_paths(task_id)
-    target = {"result.txt": paths["txt"], "result.json": paths["json"]}.get(filename)
+    res = Results(task_id)
+    target = {"result.txt": res.txt, "result.json": res.json}.get(filename)
 
-    if not target or not target.exists():
+    if not (target and target.exists()):
         raise HTTPException(404, "File not found")
 
-    return FileResponse(target, media_type="application/octet-stream", filename=filename)
+    return FileResponse(target, filename=filename, media_type="application/octet-stream")
 
-# ──────────────────────────────────────────────────────────────
-# Dev helper (optional)
-# ──────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------
+# Dev helper
+# ------------------------------------------------------------------
 if __name__ == "__main__":  # pragma: no cover
     import uvicorn
+
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

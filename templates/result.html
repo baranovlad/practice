@@ -1,27 +1,39 @@
 {% extends "base.html" %}
 
-{% block title %}Результат{% endblock %}
+{% block title %}Результат OCR{% endblock %}
+
+{% block extra_head %}
+  <style>.site-header{display:none}</style>
+{% endblock %}
 
 {% block content %}
-  <div class="container">
-    <h1>Результат OCR</h1>
+  <div class="result-container">
+    <h1>Результат OCR</h1>
 
     {% if error %}
-      <div class="alert alert-error">
-        {{ error }}
-      </div>
+      <div class="alert alert-error">{{ error }}</div>
+
     {% elif processing %}
       <div class="alert alert-wait">
-        Файл ещё обрабатывается. Обновите страницу через несколько секунд…
-        <form method="get" style="margin-top:1rem;">
-          <button type="submit">Обновить</button>
-        </form>
+        Файл ещё обрабатывается. Страница обновится автоматически…
       </div>
-  {% else %}
-  <div class="download-links">
-    <a href="{{ txt_url }}" class="btn">Скачать TXT</a>
-    <a href="{{ json_url }}" class="btn btn-secondary">Скачать JSON</a>
+      <p class="task-id">Task ID: {{ task_id }}</p>
+
+    {% else %}
+      <div class="download-links">
+        <a href="{{ txt_url }}"  class="btn">Скачать TXT</a>
+        <a href="{{ json_url }}" class="btn btn-secondary">Скачать JSON</a>
+      </div>
+      <p class="task-id">Task ID: {{ task_id }}</p>
+    {% endif %}
   </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  {% if processing %}
+    <script>
+      /* auto-refresh каждые 5 сек, пока идёт OCR */
+      setTimeout(() => location.reload(), 5000);
+    </script>
   {% endif %}
-  </div>
 {% endblock %}
