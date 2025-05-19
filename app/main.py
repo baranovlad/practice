@@ -145,18 +145,22 @@ async def api_ocr(
     if file.content_type not in {"application/pdf", "application/x-pdf"}:
         raise HTTPException(415, "Only PDF files are accepted")
 
-    # сохраняем во временный файл
-    tmp = _save_upload(file)
+    with NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(await file.read())
+        pdf_path = Path(tmp.name)
+        
+    out_dir = RESULTS_DIR / f"tmp_{uuid4().hex}"
+    
     try:
-        out_dir = RESULTS_DIR / "tmp"
-        run_ocr(tmp, out_dir, model_name=model)
-        text = (out_dir / "result.txt").read_text("utf-8")
+        run_ocr(pdf_path, out_dir, model_name=model)
+        text_file = out_dir / "result.txt"
+        text = text_file.read_text(encoding="utf-8")
+
     finally:
-        # чистим всё лишнее
-        tmp.unlink(missing_ok=True)
-        (out_dir / "result.txt").unlink(missing_ok=True)
-        (out_dir / "result.json").unlink(missing_ok=True)
-        out_dir.rmdir()
+        pdf_path.unlink(missing_ok=True)
+        for p in out_dir.glob("*"):
+            p.unlink(missing_ok=True)
+        out_dir.rmdir()                        # удалится если пустая
 
     return {"text": text}
 
