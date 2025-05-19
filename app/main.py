@@ -133,6 +133,33 @@ async def download_file(task_id: str, filename: str):
 
     return FileResponse(target, filename=filename, media_type="application/octet-stream")
 
+
+@app.post("/api/ocr")
+async def api_ocr(
+    file: UploadFile = File(...),
+    model: str = Form("EasyOCR"),
+):
+    """
+    Возвращает распознанный текст без сохранения файлов на диск клиента.
+    """
+    if file.content_type not in {"application/pdf", "application/x-pdf"}:
+        raise HTTPException(415, "Only PDF files are accepted")
+
+    # сохраняем во временный файл
+    tmp = _save_upload(file)
+    try:
+        out_dir = RESULTS_DIR / "tmp"
+        run_ocr(tmp, out_dir, model_name=model)
+        text = (out_dir / "result.txt").read_text("utf-8")
+    finally:
+        # чистим всё лишнее
+        tmp.unlink(missing_ok=True)
+        (out_dir / "result.txt").unlink(missing_ok=True)
+        (out_dir / "result.json").unlink(missing_ok=True)
+        out_dir.rmdir()
+
+    return {"text": text}
+
 # ------------------------------------------------------------------
 # Dev helper
 # ------------------------------------------------------------------
