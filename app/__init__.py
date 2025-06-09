@@ -8,7 +8,6 @@
 import os
 from pathlib import Path
 import logging
-import shutil, sys
 
 try:
     from dotenv import load_dotenv

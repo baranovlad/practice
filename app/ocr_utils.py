@@ -18,7 +18,6 @@ import easyocr
 import fitz
 from PIL import Image
 from PyPDF2 import PdfReader
-from PyPDF2.errors import PdfReadError
 
 __all__ = [
     "run_ocr",
