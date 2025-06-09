@@ -18,7 +18,8 @@
 * Python 3.9+
 * Git
 
-> Все зависимости указаны в `requirements.txt`.
+> Все зависимости **зафиксированы** в `requirements.txt`.
+> Используйте именно эти версии, чтобы избежать проблем с совместимостью.
 
 ---
 
@@ -40,7 +41,7 @@ source venv/bin/activate
 
 # Установить зависимости
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r requirements.txt  # устанавливаем строго зафиксированные версии
 ```
 
 ---
