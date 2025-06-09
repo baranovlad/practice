@@ -17,8 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # ---- Переменные окружения (CPU‑режим) -------------------------------
 ENV PYTHONUNBUFFERED=1 \
-    POPPLER_PATH=/usr/bin \
-    EASYOCR_GPU=0
+    POPPLER_PATH=/usr/bin
 
 # ---- Старт приложения ----------------------------------------------
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
