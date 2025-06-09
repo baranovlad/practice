@@ -81,7 +81,7 @@ async def upload_pdf(
     request: Request,  # keeps client IP etc. for logs if needed
     bg: BackgroundTasks,
     file: UploadFile = File(...),
-    model: str = Form("EasyOCR"),
+    model: str = Form("easyocr_cpu"),
 ):
     """Receive PDF and chosen model, spawn background OCR job."""
     if file.content_type not in {"application/pdf", "application/x-pdf"}:
@@ -138,7 +138,7 @@ async def download_file(task_id: str, filename: str):
 @app.post("/api/ocr")
 async def api_ocr(
     file: UploadFile = File(...),
-    model: str = Form("EasyOCR"),
+    model: str = Form("easyocr_cpu"),
 ):
     """
     Возвращает распознанный текст без сохранения файлов на диск клиента.

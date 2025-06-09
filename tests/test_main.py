@@ -20,7 +20,7 @@ PDF_PATH = Path("pdf/BERT.pdf")
 
 
 def _setup_dummy_ocr(monkeypatch):
-    def dummy_run_ocr(pdf_path, out_dir, *, model_name="EasyOCR"):
+    def dummy_run_ocr(pdf_path, out_dir, *, model_name="easyocr_cpu"):
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "result.txt").write_text("dummy text", encoding="utf-8")
         (out_dir / "result.json").write_text("[]", encoding="utf-8")
@@ -42,7 +42,7 @@ def test_upload_endpoint(monkeypatch):
     with PDF_PATH.open("rb") as f:
         response = client.post(
             "/upload",
-            data={"model": "EasyOCR"},
+            data={"model": "easyocr_cpu"},
             files={"file": ("test.pdf", f, "application/pdf")},
             allow_redirects=False,
         )
@@ -62,7 +62,7 @@ def test_api_ocr_endpoint(monkeypatch):
     with PDF_PATH.open("rb") as f:
         response = client.post(
             "/api/ocr",
-            data={"model": "EasyOCR"},
+            data={"model": "easyocr_cpu"},
             files={"file": ("test.pdf", f, "application/pdf")},
         )
 

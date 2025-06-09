@@ -14,8 +14,10 @@
     <form action="/upload" method="post" enctype="multipart/form-data">
       <input type="file" name="file" required>
       <select id="modelSelect" name="model">
-        <option value="EasyOCR">EasyOCR (быстро, без GPU)</option>
-        <option value="RolmOCR">RolmOCR (точнее, требует GPU)</option>
+        <option value="easyocr_cpu">EasyOCR (CPU)</option>
+        <option value="easyocr_gpu">EasyOCR (GPU)</option>
+        <option value="rolmocr_cpu">RolmOCR (CPU)</option>
+        <option value="rolmocr_gpu">RolmOCR (GPU)</option>
       </select>
       <button type="submit">Отправить</button>
     </form>

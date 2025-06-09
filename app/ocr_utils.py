@@ -25,41 +25,69 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
-DEFAULT_MODEL = os.getenv("MODEL_NAME", "EasyOCR")
+DEFAULT_MODEL = os.getenv("MODEL_NAME", "easyocr_cpu")
 
 # ------------------------------------------------------------------
 # EasyOCR (fast, small)
 # ------------------------------------------------------------------
-reader_easy = easyocr.Reader(["ru", "en"], gpu=os.getenv("EASYOCR_GPU", "0") in {"1", "true", "yes"})
-logger.info("EasyOCR initialised")
+_reader_easy_cpu = None
+_reader_easy_gpu = None
+
+
+def _get_easy_reader(use_gpu: bool):
+    global _reader_easy_cpu, _reader_easy_gpu  # pylint: disable=global-statement
+    if use_gpu:
+        if _reader_easy_gpu is None:
+            _reader_easy_gpu = easyocr.Reader(["ru", "en"], gpu=True)
+            logger.info("EasyOCR GPU initialised")
+        return _reader_easy_gpu
+    if _reader_easy_cpu is None:
+        _reader_easy_cpu = easyocr.Reader(["ru", "en"], gpu=False)
+        logger.info("EasyOCR CPU initialised")
+    return _reader_easy_cpu
 
 # ------------------------------------------------------------------
 # RolmOCR — lazy load, no device_map
 # ------------------------------------------------------------------
-_rolm_model = None
-_rolm_processor = None
+_rolm_model_cpu = None
+_rolm_processor_cpu = None
+_rolm_model_gpu = None
+_rolm_processor_gpu = None
 
 
-def _load_rolm():
-    global _rolm_model, _rolm_processor  # pylint: disable=global-statement
-    if _rolm_model is not None:
-        return _rolm_model, _rolm_processor
+def _load_rolm(use_gpu: bool):
+    global _rolm_model_cpu, _rolm_processor_cpu, _rolm_model_gpu, _rolm_processor_gpu  # pylint: disable=global-statement
+    if use_gpu:
+        if _rolm_model_gpu is not None:
+            return _rolm_model_gpu, _rolm_processor_gpu
+    else:
+        if _rolm_model_cpu is not None:
+            return _rolm_model_cpu, _rolm_processor_cpu
 
     import torch  # heavy only if really needed
     from transformers import AutoProcessor, AutoModelForImageTextToText
 
-    logger.info("Loading RolmOCR (CPU mode)")
-    _rolm_model = AutoModelForImageTextToText.from_pretrained(
+    device = "cuda" if use_gpu else "cpu"
+    logger.info("Loading RolmOCR (%s mode)", device.upper())
+    model = AutoModelForImageTextToText.from_pretrained(
         "reducto/RolmOCR",
         torch_dtype="auto",
         trust_remote_code=True,
         low_cpu_mem_usage=True,
-    ).to("cpu")
+    ).to(device)
 
-    _rolm_processor = AutoProcessor.from_pretrained(
+    processor = AutoProcessor.from_pretrained(
         "reducto/RolmOCR", trust_remote_code=True, use_fast=False
     )
-    return _rolm_model, _rolm_processor
+
+    if use_gpu:
+        _rolm_model_gpu = model
+        _rolm_processor_gpu = processor
+    else:
+        _rolm_model_cpu = model
+        _rolm_processor_cpu = processor
+
+    return model, processor
 
 # ------------------------------------------------------------------
 # OCR pipeline helpers
@@ -87,15 +115,16 @@ def _pdf_to_images(pdf_path: Path, dpi: int = 200) -> list[Image.Image]:
 def _ocr_images(images: list[Any], model_name: str) -> Tuple[str, List[List[Dict[str, Any]]]]:
     texts, pages_json = [], []
     for img in images:
-        if model_name == "EasyOCR":
-            result = reader_easy.readtext(np.array(img), detail=1)
+        if model_name.startswith("easyocr"):
+            reader = _get_easy_reader(model_name.endswith("_gpu"))
+            result = reader.readtext(np.array(img), detail=1)
             texts.append("\n".join(r[1] for r in result))
             pages_json.append([
                 {"bbox": np.array(r[0]).flatten().tolist(), "text": r[1], "conf": float(r[2])}
                 for r in result
             ])
-        else:  # RolmOCR
-            model, processor = _load_rolm()
+        elif model_name.startswith("rolmocr"):
+            model, processor = _load_rolm(model_name.endswith("_gpu"))
             from qwen_vl_utils import process_vision_info
 
             messages = [{
@@ -112,6 +141,8 @@ def _ocr_images(images: list[Any], model_name: str) -> Tuple[str, List[List[Dict
             text = processor.batch_decode(out[:, batch.input_ids.shape[1]:], skip_special_tokens=True)[0]
             texts.append(text)
             pages_json.append([{"text": text}])
+        else:
+            raise ValueError(f"Unknown model {model_name}")
     return "\n\n".join(texts), pages_json
 
 
