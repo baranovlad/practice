@@ -68,6 +68,10 @@ body {
   cursor: pointer;
 }
 
+.upload-container input[type="file"] {
+  padding: 8px;
+}
+
 .upload-container select {
   appearance: none;
   background: #fff;
@@ -92,73 +96,6 @@ footer {
   display: none;
 }
 
-/* Подключаем шрифт на всякий случай */
-@import url('https://fonts.googleapis.com/css2?family=Raleway:wght@400;700&display=swap');
-
-body {
-  margin: 0;
-  padding: 0;
-  background: #f5f5f5;
-  font-family: 'Raleway', sans-serif;
-}
-
-.upload-container {
-  max-width: 600px;
-  margin: 80px auto;
-  padding: 24px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  text-align: center;
-}
-
-.upload-container h1 {
-  margin-bottom: 24px;
-  font-size: 1.8em;
-  font-weight: 700;
-}
-
-.upload-container form {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 16px;
-}
-
-.upload-container input[type="file"],
-.upload-container select,
-.upload-container button {
-  font-family: 'Raleway', sans-serif;
-  font-size: 1em;
-  box-sizing: border-box;
-  width: 100%;
-  padding: 12px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.upload-container input[type="file"] {
-  padding: 8px;
-}
-
-.upload-container select {
-  appearance: none;
-  background: #fff;
-  cursor: pointer;
-}
-
-.upload-container button {
-  background: #007bff;
-  color: #fff;
-  font-weight: 600;
-  border: none;
-  cursor: pointer;
-  transition: background .2s;
-}
-
-.upload-container button:hover {
-  background: #0056b3;
-}
 
 /* ───────── result page ───────── */
 .result-container{
@@ -208,7 +145,3 @@ body {
 }
 
 
-/* Убираем нижние подписи */
-footer {
-  display: none;
-}
