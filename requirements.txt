@@ -10,3 +10,6 @@ transformers
 qwen_vl_utils
 torch
 fitz
+numpy
+python-dotenv
+scikit-learn
