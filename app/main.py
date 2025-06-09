@@ -22,14 +22,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .ocr_utils import run_ocr
+from . import ROOT_DIR
 
 # ------------------------------------------------------------------
 # Paths
 # ------------------------------------------------------------------
-ROOT = Path(__file__).resolve().parent.parent
-TEMPLATES_DIR = ROOT / "templates"
-STATIC_DIR = ROOT / "static"
-RESULTS_DIR = ROOT / "results"
+TEMPLATES_DIR = ROOT_DIR / "templates"
+STATIC_DIR = ROOT_DIR / "static"
+RESULTS_DIR = ROOT_DIR / "results"
 RESULTS_DIR.mkdir(exist_ok=True)
 
 # ------------------------------------------------------------------
@@ -60,7 +60,7 @@ class Results:
         self.json = self.folder / "result.json"
 
 
-async def _process_pdf(src: Path, task_id: str, model_name: str) -> None:
+def _process_pdf(src: Path, task_id: str, model_name: str) -> None:
     try:
         run_ocr(src, RESULTS_DIR / task_id, model_name=model_name)
     finally:
