@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import uuid
+from uuid import uuid4
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
