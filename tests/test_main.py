@@ -6,12 +6,24 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 for name in ["numpy", "easyocr", "fitz", "PIL", "PyPDF2", "PyPDF2.errors"]:
     sys.modules.setdefault(name, types.ModuleType(name))
-sys.modules["easyocr"].Reader = type("Reader", (), {"__init__": lambda *a, **k: None, "readtext": lambda *a, **k: []})
+sys.modules["easyocr"].Reader = type(
+    "Reader",
+    (),
+    {"__init__": lambda *a, **k: None, "readtext": lambda *a, **k: []},
+)
 sys.modules["PIL"].Image = type("Image", (), {})
 sys.modules["PyPDF2"].PdfReader = lambda *a, **k: None
 sys.modules["PyPDF2.errors"].PdfReadError = Exception
 
-from fastapi.testclient import TestClient
+import fastapi_stub
+
+sys.modules.setdefault("fastapi", fastapi_stub)
+sys.modules.setdefault("fastapi.responses", fastapi_stub.responses)
+sys.modules.setdefault("fastapi.staticfiles", fastapi_stub.staticfiles)
+sys.modules.setdefault("fastapi.templating", fastapi_stub.templating)
+sys.modules.setdefault("fastapi.testclient", fastapi_stub.testclient)
+
+from fastapi_stub.testclient import TestClient
 
 from app.main import app
 

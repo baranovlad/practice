@@ -11,6 +11,7 @@ RUN apt-get update && \
 # ---- Копируем код ---------------------------------------------------
 WORKDIR /app
 COPY . /app
+RUN rm -rf fastapi_stub
 
 # ---- Устанавливаем Python‑зависимости -------------------------------
 RUN pip install --no-cache-dir -r requirements.txt
