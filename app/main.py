@@ -2,6 +2,8 @@ from __future__ import annotations
 
 """FastAPI entry‑point for the OCR‑PDF demo (model switch‑ready)."""
 
+import logging
+import os
 import shutil
 import uuid
 from uuid import uuid4
@@ -21,8 +23,23 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - optional dependency
+    load_dotenv = None
+
 from .ocr_utils import run_ocr
-from . import ROOT_DIR
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+ENV_FILE = ROOT_DIR / ".env"
+
+if load_dotenv is not None and ENV_FILE.exists():
+    load_dotenv(ENV_FILE)  # noqa: S603 – safe: user-controlled repo
+    logging.getLogger("uvicorn.error").info("Loaded environment from %s", ENV_FILE)
+else:
+    logging.getLogger("uvicorn.error").debug(".env file not found or python-dotenv missing")
+
+__version__ = "0.1.0"  # remember to bump when releasing
 
 # ------------------------------------------------------------------
 # Paths
