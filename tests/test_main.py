@@ -28,7 +28,13 @@ from fastapi_stub.testclient import TestClient
 from app.main import app
 
 
-PDF_PATH = Path("pdf/BERT.pdf")
+PDF_BYTES = b"%PDF-1.4\n%EOF\n"
+
+
+def _create_pdf(tmp_path: Path) -> Path:
+    pdf_path = tmp_path / "BERT.pdf"
+    pdf_path.write_bytes(PDF_BYTES)
+    return pdf_path
 
 
 def _setup_dummy_ocr(monkeypatch):
@@ -47,11 +53,12 @@ def _setup_dummy_ocr(monkeypatch):
     monkeypatch.setattr("app.main.uuid4", uuid.uuid4, raising=False)
 
 
-def test_upload_endpoint(monkeypatch):
+def test_upload_endpoint(monkeypatch, tmp_path):
     _setup_dummy_ocr(monkeypatch)
     client = TestClient(app)
 
-    with PDF_PATH.open("rb") as f:
+    pdf_path = _create_pdf(tmp_path)
+    with pdf_path.open("rb") as f:
         response = client.post(
             "/upload",
             data={"model": "easyocr_cpu"},
@@ -67,11 +74,12 @@ def test_upload_endpoint(monkeypatch):
     assert (res_dir / "result.txt").read_text(encoding="utf-8") == "dummy text"
 
 
-def test_api_ocr_endpoint(monkeypatch):
+def test_api_ocr_endpoint(monkeypatch, tmp_path):
     _setup_dummy_ocr(monkeypatch)
     client = TestClient(app)
 
-    with PDF_PATH.open("rb") as f:
+    pdf_path = _create_pdf(tmp_path)
+    with pdf_path.open("rb") as f:
         response = client.post(
             "/api/ocr",
             data={"model": "easyocr_cpu"},
