@@ -15,8 +15,6 @@ venv/
 results/
 tmp/
 
-pdf/
-
 tools/poppler/Library/*
 !tools/poppler/Library/bin/
 !tools/poppler/Library/bin/**
